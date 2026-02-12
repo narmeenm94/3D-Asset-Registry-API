@@ -238,6 +238,19 @@ class MetadataExtractor:
             
             data = {}
             
+            # -------------------------------------------------------
+            # Read METRO metadata from glTF scene extras.
+            # The Blender plugin embeds structured metadata here via
+            # its glTF export hook (metro_metadata key in scene extras).
+            # -------------------------------------------------------
+            metro_from_extras = self._read_metro_extras(gltf)
+            if metro_from_extras:
+                data["metro_embedded"] = metro_from_extras
+                logger.info(
+                    "Found embedded METRO metadata in glTF extras: %d fields",
+                    len(metro_from_extras),
+                )
+            
             # Materials
             if gltf.materials:
                 data["material_count"] = len(gltf.materials)
@@ -290,6 +303,43 @@ class MetadataExtractor:
         except Exception as e:
             logger.warning(f"Failed to extract glTF data: {e}")
             return {"gltf_extraction_error": str(e)}
+
+    def _read_metro_extras(self, gltf) -> dict[str, Any] | None:
+        """
+        Read METRO metadata embedded in glTF scene extras.
+
+        The Blender plugin stores metadata under scene.extras["metro_metadata"].
+        This method checks all scenes and returns the first match.
+
+        Returns:
+            dict with METRO metadata fields, or None if not found.
+        """
+        import json as _json
+
+        if not gltf.scenes:
+            return None
+
+        for scene in gltf.scenes:
+            extras = getattr(scene, "extras", None)
+            if extras is None:
+                continue
+
+            metro = None
+
+            if isinstance(extras, dict):
+                metro = extras.get("metro_metadata")
+            elif isinstance(extras, str):
+                try:
+                    parsed = _json.loads(extras)
+                    if isinstance(parsed, dict):
+                        metro = parsed.get("metro_metadata")
+                except (ValueError, _json.JSONDecodeError):
+                    pass
+
+            if metro and isinstance(metro, dict):
+                return metro
+
+        return None
     
     def get_mime_type(self, file_format: str) -> str | None:
         """Get MIME type for a file format."""

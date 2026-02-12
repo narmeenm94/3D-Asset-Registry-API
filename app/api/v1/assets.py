@@ -288,22 +288,52 @@ async def create_asset(
         except Exception as e:
             logger.warning(f"Metadata extraction failed (continuing without): {e}")
     
+    # ---------------------------------------------------------------
+    # Read embedded METRO metadata from glTF extras (Blender plugin).
+    # These values act as defaults — user-provided form values override.
+    # ---------------------------------------------------------------
+    embedded = extracted_metadata.get("metro_embedded", {}) or {}
+    if embedded:
+        logger.info(
+            "Using embedded METRO metadata from glTF extras: %s",
+            list(embedded.keys()),
+        )
+
     # Use extracted values as defaults, user-provided values override
-    final_tri_count = triCount if triCount is not None else extracted_metadata.get("tri_count", 0)
+    final_tri_count = (
+        triCount
+        if triCount is not None
+        else embedded.get("triCount", extracted_metadata.get("tri_count", 0))
+    )
     
     # Build extended metadata from extraction
     extracted_bounding_box = extracted_metadata.get("bounding_box")
+    if not extracted_bounding_box and embedded.get("boundingBox"):
+        bb = embedded["boundingBox"]
+        extracted_bounding_box = {
+            "x": bb.get("x", 0), "y": bb.get("y", 0), "z": bb.get("z", 0),
+        }
+
     extracted_materials = {}
     if extracted_metadata.get("has_materials"):
         extracted_materials = {
             "count": extracted_metadata.get("material_count", 0),
             "names": extracted_metadata.get("material_names", []),
         }
+    elif embedded.get("materialProperties"):
+        mp = embedded["materialProperties"]
+        extracted_materials = {
+            "count": mp.get("materialCount", 0),
+            "hasTextures": mp.get("hasTextures", False),
+            "supportsPBR": mp.get("supportsPBR", False),
+        }
     
     # Build quality metrics from extraction
     quality_metrics = {}
     if extracted_metadata.get("vertex_count"):
         quality_metrics["vertexCount"] = extracted_metadata["vertex_count"]
+    elif embedded.get("qualityMetrics", {}).get("vertexCount"):
+        quality_metrics["vertexCount"] = embedded["qualityMetrics"]["vertexCount"]
     if extracted_metadata.get("is_watertight") is not None:
         quality_metrics["isWatertight"] = extracted_metadata["is_watertight"]
     if extracted_metadata.get("dimensions"):
@@ -319,9 +349,15 @@ async def create_asset(
     if extracted_metadata.get("generator"):
         quality_metrics["generator"] = extracted_metadata["generator"]
     
-    # Parse tags
+    # Parse tags — user form > embedded > empty
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
-    
+    if not tag_list and embedded.get("tags"):
+        embedded_tags = embedded["tags"]
+        if isinstance(embedded_tags, list):
+            tag_list = embedded_tags
+        elif isinstance(embedded_tags, str):
+            tag_list = [t.strip() for t in embedded_tags.split(",") if t.strip()]
+
     # Validate tag count
     if len(tag_list) > 20:
         raise ValidationException("Maximum 20 tags allowed")
@@ -338,33 +374,58 @@ async def create_asset(
         get_mime_type(format.value),
     )
     
-    # Parse derivedFromAsset (comma-separated URIs)
+    # Parse derivedFromAsset (comma-separated URIs) — form > embedded
     derived_list = None
     if derivedFromAsset:
         derived_list = [u.strip() for u in derivedFromAsset.split(",") if u.strip()]
-    
-    # Create asset data with extracted metadata
+    elif embedded.get("derivedFromAsset"):
+        val = embedded["derivedFromAsset"]
+        derived_list = val if isinstance(val, list) else [val]
+
+    # Use embedded values as fallbacks for fields not provided via form
+    final_use_case = useCase or embedded.get("useCase")
+    final_license = license or (embedded.get("license") if embedded.get("license") != "NONE" else None)
+    final_scientific_domain = scientificDomain or embedded.get("scientificDomain")
+    final_source_data_format = sourceDataFormat or embedded.get("sourceDataFormat")
+    final_lineage_id = lineageId or embedded.get("lineageId")
+    final_project_phase = projectPhase or embedded.get("projectPhase")
+    final_usage_constraints = usageConstraints or embedded.get("usageConstraints")
+    final_deployment_notes = deploymentNotes or embedded.get("deploymentNotes")
+
+    # Provenance from embedded
+    embedded_provenance = embedded.get("provenance")
+
+    # Visualization capabilities from embedded
+    embedded_viz = embedded.get("visualizationCapabilities")
+
+    # Usage guidelines from embedded
+    embedded_guidelines = embedded.get("usageGuidelines")
+
+    # Create asset data with extracted + embedded metadata
     create_data = AssetCreate(
         name=name,
-        description=description,
+        description=description or embedded.get("description", ""),
         format=format,
         tri_count=final_tri_count,
         tags=tag_list,
-        use_case=useCase,
-        access_level=accessLevel,
-        license=license,
-        attribution_required=attributionRequired,
-        scientific_domain=scientificDomain,
-        source_data_format=sourceDataFormat,
-        lineage_id=lineageId,
+        use_case=final_use_case,
+        access_level=accessLevel or embedded.get("accessLevel", "private"),
+        license=final_license,
+        attribution_required=attributionRequired or embedded.get("attributionRequired", False),
+        scientific_domain=final_scientific_domain,
+        source_data_format=final_source_data_format,
+        lineage_id=final_lineage_id,
         derived_from_asset=derived_list,
-        project_phase=projectPhase,
-        usage_constraints=usageConstraints,
-        deployment_notes=deploymentNotes,
-        # Add extracted data
+        project_phase=final_project_phase,
+        usage_constraints=final_usage_constraints,
+        deployment_notes=final_deployment_notes,
+        # Add extracted/embedded data
         bounding_box=extracted_bounding_box,
         material_properties=extracted_materials if extracted_materials else None,
         quality_metrics=quality_metrics if quality_metrics else None,
+        provenance=embedded_provenance,
+        visualization_capabilities=embedded_viz,
+        usage_guidelines=embedded_guidelines,
     )
     
     # Create in database
