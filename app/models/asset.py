@@ -332,6 +332,8 @@ class Asset(Base):
         back_populates="asset",
         lazy="selectin",
         order_by="AssetVersion.version_number.desc()",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:

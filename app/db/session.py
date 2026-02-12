@@ -8,6 +8,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
@@ -44,6 +45,14 @@ if "sqlite" in _active_database_url:
         echo=settings.DEBUG,
         connect_args={"check_same_thread": False},
     )
+
+    # SQLite does NOT enforce foreign keys by default.
+    # Enable them on every connection so ON DELETE CASCADE works.
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 else:
     engine = create_async_engine(
         _active_database_url,

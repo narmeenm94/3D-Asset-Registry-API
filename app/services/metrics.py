@@ -9,8 +9,7 @@ import time
 from collections import defaultdict
 from typing import Any
 
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class MetricsCollector:
@@ -133,43 +132,59 @@ def get_metrics_collector() -> MetricsCollector:
     return _metrics_collector
 
 
-class MetricsMiddleware(BaseHTTPMiddleware):
+class MetricsMiddleware:
     """
-    ASGI middleware that records request metrics.
-    
-    Measures request duration and records status codes
-    for all API requests.
+    Pure ASGI middleware that records request metrics.
+
+    Uses the raw ASGI interface instead of BaseHTTPMiddleware to avoid
+    the known issue where BaseHTTPMiddleware corrupts empty-body responses
+    (e.g. 204 No Content), causing 'Response content shorter than Content-Length'.
     """
-    
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        # Skip metrics endpoint itself to avoid recursion
-        if request.url.path.endswith("/metrics"):
-            return await call_next(request)
-        
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+
+        # Skip metrics endpoints to avoid recursion
+        if path.endswith("/metrics") or path.endswith("/metrics/prometheus"):
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "GET")
         start = time.time()
-        response = await call_next(request)
-        duration = time.time() - start
-        
-        # Normalize path: replace UUIDs with {id} for aggregation
-        path = request.url.path
-        parts = path.split("/")
-        normalized = []
-        for part in parts:
-            # Simple UUID detection (36 chars with hyphens)
-            if len(part) == 36 and part.count("-") == 4:
-                normalized.append("{id}")
-            else:
-                normalized.append(part)
-        normalized_path = "/".join(normalized)
-        
-        collector = get_metrics_collector()
-        collector.record_request(
-            method=request.method,
-            path=normalized_path,
-            status_code=response.status_code,
-            duration=duration,
-        )
-        
-        return response
+        status_code = 0
+
+        async def send_wrapper(message: dict) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message.get("status", 0)
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration = time.time() - start
+
+            # Normalize path: replace UUIDs with {id} for aggregation
+            parts = path.split("/")
+            normalized = []
+            for part in parts:
+                if len(part) == 36 and part.count("-") == 4:
+                    normalized.append("{id}")
+                else:
+                    normalized.append(part)
+            normalized_path = "/".join(normalized)
+
+            collector = get_metrics_collector()
+            collector.record_request(
+                method=method,
+                path=normalized_path,
+                status_code=status_code,
+                duration=duration,
+            )
