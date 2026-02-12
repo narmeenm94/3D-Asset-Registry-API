@@ -1,0 +1,135 @@
+# METRO 3D Asset Registry API - Development Docker Compose
+# Provides complete local development environment
+
+version: '3.8'
+
+services:
+  # ===================
+  # METRO API Service
+  # ===================
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # API Settings
+      - API_V1_PREFIX=/api/v1
+      - PROJECT_NAME=METRO 3D Asset Registry
+      - DEBUG=true
+      
+      # Database
+      - DATABASE_URL=postgresql+asyncpg://metro:metro@db:5432/metro
+      
+      # Storage
+      - STORAGE_BACKEND=s3
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET_NAME=metro-assets
+      - S3_REGION=us-east-1
+      
+      # Authentication (Dev Mode)
+      - DEV_MODE=true
+      - DEV_USER_ID=dev-user-001
+      - DEV_USER_EMAIL=developer@metropolia.fi
+      - DEV_USER_INSTITUTION=METRO_Finland
+      
+      # DDTE Auth (for production)
+      - DDTE_JWKS_URL=http://mock-auth:8080/.well-known/jwks.json
+      - DDTE_ISSUER=https://auth.ddte.eu
+      - DDTE_AUDIENCE=dtrip4h-asset-libraries
+      
+      # Limits
+      - MAX_UPLOAD_SIZE=524288000
+      - LOG_LEVEL=INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ../app:/app/app:ro  # Mount app code for development
+    networks:
+      - metro-network
+    restart: unless-stopped
+
+  # ===================
+  # PostgreSQL Database
+  # ===================
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=metro
+      - POSTGRES_PASSWORD=metro
+      - POSTGRES_DB=metro
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metro -d metro"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - metro-network
+    restart: unless-stopped
+
+  # ===================
+  # MinIO Object Storage (S3-compatible)
+  # ===================
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Console
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - metro-network
+    restart: unless-stopped
+
+  # ===================
+  # MinIO Bucket Setup (runs once)
+  # ===================
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb myminio/metro-assets --ignore-existing;
+      mc anonymous set download myminio/metro-assets;
+      exit 0;
+      "
+    networks:
+      - metro-network
+
+# ===================
+# Volumes
+# ===================
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+
+# ===================
+# Networks
+# ===================
+networks:
+  metro-network:
+    driver: bridge

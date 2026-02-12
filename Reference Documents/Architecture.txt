@@ -1,0 +1,1149 @@
+
+ 
+
+
+
+DTRIP4H
+Digital Twin for Research Infrastructure for Predictive, Personalized, Participatory and Precision Health
+
+D9.1 Architecture Design for Automated 3D Asset Generation
+
+
+Lead Beneficiary: METRO (Metropolia Ammattikorkeakoulu OY)
+Work Package: WP9 - Design and development of scalable 3D visualization Deliverable: D9.1 Design guidelines for automated 3D asset generation Type: Public
+Version: 4.0
+Date: January 2026
+Status: Final Draft
+
+
+
+This project has received funding from the European Union's Horizon Europe
+research and innovation programme under grant agreement No. [EU101188432]
+ 
+
+Table of Contents
+ 
+Contents
+Table of Contents	2
+1.	Purpose, Scope, and Audience	5
+1.1	Document Purpose	5
+1.2	Scope and Coverage	5
+1.3	Target Audience	6
+1.4	Key Definitions	6
+2.	System Overview and Architecture	8
+2.1	Architectural Overview	8
+2.2	System Architecture Diagram	9
+2.3	Architectural Principles	10
+2.4	Access Patterns and Data Flows	10
+3.	Component Specifications	12
+3.1	METRO Middleware API	12
+3.2	3D Asset Database	15
+3.3	Blender Plugins	16
+3.4	Unity VR Template	18
+4.	API Interfaces and Data Contracts	19
+4.1	Authentication and Authorization	19
+4.2	Data Contracts	19
+5.	Data Model and Repository	21
+5.1	Asset Entity Specification	21
+5.2	Storage Organization	24
+6.	System Workflows and Data Flows	25
+6.1	Portal-led Access Workflow	25
+6.2	Tool-led Access Workflow	26
+6.3	Asset Lifecycle Management	27
+7.	User Experience and Tooling	28
+7.1	Blender Plugin UX Guidelines	28
+7.2	Domain-Specific Plugin Specifications	28
+8.	Deployment Flexibility and DDTE Integration	31
+8.1	Overview	31
+8.2	Federated Architecture Compliance	32
+8.2.1 Data Sovereignty and the Role of METRO	32
+8.2.2 Decentralized Architecture Diagram	33
+8.3 Decentralized Asset Library Deployment Strategy	33
+8.3.1 Development Phase (M1-M18) - Internal Testing Only	34
+8.3.2 Production Deployment (M19+) - Fully Decentralized Architecture	34
+8.3.3 Cross-RI Asset Discovery and Federated Search	36
+8.3.4 Integration Architecture with DDTE Services	37
+8.4 Tool Integration and Plugin Architecture	39
+8.4.1 Integration with DDTE Services: Authentication and Authorization	39
+8.4.2 Asset Permission Model and Metadata Schema	44
+8.5 Technical Portability and Containerization	48
+8.5.1 Proposed Backend Services Containerization	48
+8.5.2 Proposed Infrastructure Portability Matrix	48
+8.5.3 Data Harmonization and Interoperability	48
+8.6 Compliance Framework and Best Practices	49
+8.6.1 GDPR and Data Protection Compliance	49
+8.6.2 FAIR Data Principles	49
+8.6.3 EOSC (European Open Science Cloud) Alignment	50
+8.6.4 Horizon Europe Open Science Requirements	50
+8.6.5 Responsibility Matrix	51
+9.	Risk Management	51
+9.1	Risk Assessment and Mitigation	51
+10.	Summary	52
+10.1 Core Architectural Achievements	52
+10.2 Deployment Model Clarification	52
+10.3 Project Impact and Sustainability	53
+11.	Document Information	54
+
+ 
+
+1.	Purpose, Scope, and Audience
+
+1.1	Document Purpose
+This document defines the architecture designed and implemented by METRO for Deliverable D9.1: Design guidelines for automated 3D asset generation within the DTRIP4H project. It specifies how the WP9 system creates, manages, discovers, and distributes 3D assets across the project ecosystem, and how domain-specific Blender plug-ins and an optional Unity VR template consume those assets.
+The primary goal is to provide a clear and rigorous architectural description that enables a mixed technical audience, including developers, data engineers, XR specialists, researchers, and project stakeholders, to understand and implement the system with a shared mental model.
+
+1.2	Scope and Coverage
+This document covers:
+
+ 	End-to-end WP9 architecture: Conceptual and logical views, key components, and their responsibilities
+ 	Interface specifications: Data contracts between components, metadata and binary asset exchange protocols
+ 	Dual access patterns: Asset access via DDTE portal (human-driven) and programmatic access from local tools
+ 	Data model: Asset and tag structures, versioning, and operational practices
+ 	Authentication model: Integration with DDTE for security and access control
+ 	Deployment flexibility: Infrastructure options, containerization, and DDTE integration strategies
+ 	Non-functional requirements: Interoperability, performance, maintainability goals and risk mitigation
+ 
+1.3	Target Audience
+
+ 	Developers and technical contributors implementing or extending Blender plug-ins, middleware API, and asset database components
+ 	Researchers and XR designers who need to understand asset workflows from data files to visualization tools and XR applications
+ 	Project managers and reviewers requiring precise understanding of WP9 responsibilities, boundaries, and deliverables
+ 	System administrators responsible for deployment and operational management
+ 	EU project reviewers assessing compliance with Horizon Europe requirements
+
+1.4	Key Definitions
+
+Term	Definition
+3D Asset	A complete unit comprising both binary file (e.g., .glTF, .USDZ, .blend, .fbx) and associated metadata (name, description, format, triangle count, tags, uploader, timestamps, version, access permissions)
+DDTE	Decentralized Digital Twin Environment - the project's federated environment providing authentication services and service discovery. METRO middleware trusts DDTE tokens for identity verification but makes authorization decisions locally based on asset metadata
+Middleware API	The REST service operated by each RI serving as the gateway to their local asset database
+Blender Plugins	Domain-specific Blender extensions that parse scientific data, generate optimized 3D models, and integrate with decentralized asset libraries
+Asset Metadata	JSON document describing an asset sufficiently for search, filtering, selection, and permission enforcement operations
+DDTE Token	JWT-based authentication token issued by DDTE proving caller identity for API requests. Does not automatically grant access to specific assets
+Federated Architecture	Distributed system design where DDTE provides federation services (authentication, service discovery, monitoring) while asset libraries and sensitive data remain at decentralized local RI nodes with autonomous control
+Decentralized RI Node	Local Research Infrastructure instance operating its own asset library with autonomous control over storage, permissions, and access policy enforcement
+DDTE Federation Services	Centralized DDTE services enabling federation: authentication (JWT token issuance), service registry (endpoint discovery), and operational monitoring, but NOT asset storage, permission management, or authorization decisions
+Generic Asset Library	Reusable 3D visualization components (templates, models) stored at decentralized RI nodes - not sensitive research data
+Authorization	Asset-level access control decisions made locally by each RI based on asset metadata permissions and validated user identity
+Authentication	User identity verification performed by DDTE authentication services, resulting in JWT token issuance
+ 
+2.	System Overview and Architecture
+2.1	Architectural Overview
+WP9 delivers a comprehensive two-part system addressing automated 3D asset generation and management:
+ 	Server-side 3D Asset Platform: Comprising a database of 3D models and a Middleware API exposing search, listing, download, and upload capabilities. This platform is designed with infrastructure portability as a core principle.
+ 	Client-side Toolset: Centered on domain-specific Blender plug-ins for scientific visualization with an optional Unity VR template for immersive experiences
+Users authenticate through the DDTE environment and can access assets via two independent paths:
+ 	Path A (Portal-led): Human users browse and download assets through the DDTE web portal
+ 	Path B (Tool-led): Programmatic access from Blender plug-ins and Unity scripts via the Middleware API
+All asset discovery operates through structured metadata (JSON), while asset consumption involves direct binary file transfer supporting standard formats including glTF 2.0, USDZ,
+.blend, and .fbx.
+2.2	System Architecture Diagram
+ 
+2.3	Architectural Principles
+
+Principle	Description	Implementation
+Separation of Concerns	Clear responsibility boundaries	Identity management in DDTE; assets in middleware; generation in local tools
+Authentication Delegation	External identity management	METRO validates DDTE tokens without storing credentials or managing users
+Local-first Generation	Minimize server complexity	All 3D generation and processing occurs on user workstations
+Open Standards	Broad ecosystem compatibility	Priority support for glTF 2.0 and USDZ with
+.blend for source editability
+Dual Access Patterns	Support human and programmatic use	Consistent API serving both portal and tool-based access
+Version Management	Comprehensive asset history	Immutable versioning with rollback capabilities and provenance tracking
+Infrastructure Portability	Platform-agnostic deployment	Containerized services deployable across cloud and on-premise
+2.4	Access Patterns and Data Flows
+
+Path A: Portal-led Access (Human-driven)
+
+
+
+
+
+
+
+
+
+
+
+
+Path B: Tool-led Access (Programmatic)
+
+
+
+
+
+
+ 
+
+
+3.	Component Specifications
+3.1	METRO Middleware API
+3.1.1	Role and Responsibilities
+The Middleware API serves as the single, well-defined gateway into the 3D Asset Platform. It provides a RESTful interface for:
+ 	Discovery: Search and list assets via structured metadata queries
+ 	Retrieval: Stream download of asset binary files
+ 	Submission: Upload new assets and versions via multipart form-data
+ 	Curation: Update metadata fields including tags and descriptions
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+3.1.2	API Endpoint Specification
+Base Path: /api/v1
+
+Endpoint	Method	Purpose	Request/Response
+/assets	GET	Search/List assets (paginated)	Query params: q, tags, format, minTris, maxTris, page, size
+Returns: JSON metadata array
+/assets/{id}	GET	Get specific asset metadata	Returns: Complete asset JSON object
+/assets/{id}/file	GET	Download asset binary	Returns: Binary stream with appropriate MIME type
+/assets	POST	Create new asset	multipart/form-data: metadata (JSON) + file (binary)
+/assets/{id}/file	PUT	Upload new version	multipart/form-data: file (binary)
+/assets/{id}	PATCH	Update metadata fields	JSON body with allowed fields (name, description)
+/assets/{id}/tags	PUT	Replace tag set	JSON: {"tags": ["tag1", "tag2", ...]}
+/tags	GET	List known tags	Returns: Array of tag strings with usage counts
+/health	GET	Service health check	Returns: {"status": "ok"} (no authentication required)
+ 
+3.1.3	Error Handling
+
+Status Code	
+Condition	
+Response Format
+400	Malformed request (invalid JSON, missing parameters)	{"error": "validation_failed", "message": "descriptive text"}
+401	Missing or invalid DDTE token	{"error": "unauthorized", "message": "valid token required"}
+403	Valid token but insufficient permissions	{"error": "forbidden", "message": "access denied"}
+404	Asset not found	{"error": "not_found", "message": "asset ID not found"}
+413	Upload size exceeds limit	{"error": "payload_too_large", "message": "maximum size exceeded"}
+
+3.2	3D Asset Database
+
+3.2.1	Architecture and Storage
+The database employs a two-layer architecture optimized for both metadata search and binary file storage:
+ 	Metadata Store: Relational database containing all searchable asset properties with optimized indexes
+ 	Binary Store: Object storage system maintaining actual 3D files with version control
+
+
+
+
+3.3	Blender Plugins
+
+3.3.1	Common Plugin Architecture
+All five Blender plugins share a consistent architectural pattern and user experience:
+
+Component	Functionality	Implementation
+Input Parser	Data validation and structure detection	Format-specific readers with clear error messaging
+Geometry Generator	3D model creation with optimization	Instancing, LOD support, clean hierarchy preservation
+Export System	Multi-format asset generation	glTF 2.0 and USDZ priority with .blend source retention
+Platform Integration	Optional asset repository interaction	Search, download, upload via DDTE authentication
+User Interface	Consistent Blender panel layout	Standardized sections for input, options, export, repository
+
+3.3.2	Domain-Specific Plugin Specifications
+
+Molecule Structure Generator
+
+Aspect	Specification
+Input Formats	.pdb, .xyz, .smi (converted to .pdb prior to processing)
+Visualization Modes	Van der Waals representation, atomic radius with bond sticks
+Optimization	Element-type instancing, configurable radius scaling
+Output Structure	Hierarchical organization by residue/chain with materials
+
+ 
+ADMET Toxicity 3D Visualizer
+
+
+Aspect	Specification
+Input Format	.csv with fields: logP, QED, AMES, BBB_Martins, CYP variants, NR-, SR-, LD50
+Visualization	3D scatter plots and grid visualizations with user-selected axes
+Data Processing	Normalization options: min-max, z-score, logarithmic scaling
+Output Features	Labeled data points with optional color legends and compound identification
+
+CAMS Air Quality Data Visualizer
+
+Aspect	Specification
+Input Format	.nc (netCDF) from Copernicus Atmosphere Monitoring Service
+Geographic Processing	User-defined coordinate bounds and area selection
+Visualization	2D depth map conversion to 3D surface with pollutant-based coloring (PM2.5, NO₂)
+Customization	Configurable height scaling with metadata documentation
+
+Cancer Cell Visualizer
+
+Aspect	Specification
+Input Format	.csv with 3D coordinates, mRNA expression (a.u.), ECM stiffness (Pa), isCancer boolean
+Cluster Generation	3D spatial clustering with size/color mapping to biological properties
+Custom Meshes	Support for cell-type specific geometry (.gltf, .fbx) without lighting/camera
+Grouping	Hierarchical organization by cell type and cancer state
+
+
+
+Dopamine Carrier Visualizer (To be determined during the development of UC5)
+
+Aspect	Specification
+Input Format	Domain-specific tabular data or known PDB structures
+Visualization	Molecular transport visualization with carrier-specific styling
+Integration	Extends molecule generator architecture with dopamine-specific defaults
+
+
+3.4	Unity VR Template
+
+3.4.1	Template Features
+The Unity VR Template provides a rapid prototyping foundation for immersive 3D asset consumption:
+ 	XR Scaffolding: Pre-configured camera rigs, controller input, and basic interaction systems (grab, inspect, manipulate)
+ 	Asset Import Pipeline: Automated .glTF and .USDZ import with sensible scaling, orientation, and material defaults
+ 	Performance Optimization: Built-in culling systems, optional LOD groups, and frame-rate monitoring overlays
+ 	UI Framework: Extensible panel system for asset information display and user controls
+3.4.2	Integration Options
+
+Integration Method	
+Description	
+Use Case
+Direct File Import	Drag-and-drop exported assets into Unity scene	Simple prototyping without network dependency
+API Integration	Unity script calls METRO API with DDTE token	Dynamic asset loading and runtime catalog browsing
+Batch Processing	Automated download and import of tagged asset collections	Large-scale scene assembly and testing
+ 
+4.	API Interfaces and Data Contracts
+4.1	Authentication and Authorization
+
+4.1.1	DDTE Token Integration
+The system relies entirely on DDTE-issued JWT tokens for authentication and authorization:
+
+
+Component	Responsibility	Implementation
+DDTE
+Authentication	User identity verification and token issuance	OAuth2/OIDC flows with JWT token generation
+METRO API
+Validation	Token verification and authorization enforcement	JWT signature validation and claims extraction
+Token Claims	User identity and permissions encoding	Standard JWT claims plus DDTE-specific attributes
+
+4.1.2	Permission Model
+
+Operation	Required Permission	Token Claim
+List/Search Assets	Read Access	scope: assets:read
+Download Asset Files	Read Access	scope: assets:read
+Upload New Assets	Write Access	scope: assets:write
+Update Asset Metadata	Write Access (Own Assets)	scope: assets:write + ownership validation
+Administrative Operations	Admin Access	scope: assets:admin
+
+4.2	Data Contracts
+
+4.2.1	Supported File Formats
+More formats can be added as needed during the lifetime of the project.
+
+Format	Extension	MIME Type	Use Case
+glTF Binary	.glb	model/gltf-binary	Primary interchange format for real-time engines
+glTF JSON	.gltf	model/gltf+json	Text-based glTF with external resources
+USDZ	.usdz	model/vnd.usdz+zip	Apple AR/VR ecosystem compatibility
+Blender	.blend	application/octet-stream	Source files for editing and modification
+FBX	.fbx	application/octet-stream	Legacy 3D pipeline compatibility
+
+4.2.2	Validation Rules
+
+Field	Type	Validation	Required
+name	String	1-100 characters, no special chars except - and _	✓
+format	Enum	Must match supported format list	✓
+tags	Array[String]	0-20 tags, each 1-50 characters	✓	
+triCount	Integer	0-10,000,000 (performance guidance)	✓
+description	String	0-500 characters	✓
+useCase	String	UC2, UC3, UC4, UC5, or custom identifier	✗
+
+
+
+
+
+
+
+
+5.	Data Model and Repository
+5.1	Asset Entity Specification
+
+5.1.1	Core Asset Properties
+
+Property	Type	Description	Example
+id	UUID	Globally unique identifier	9a0c7b5e-6e7f-4db0-9c9c-4b0b5a9e2a42
+name	String	Human-readable asset name	CYP3A4_Molecule_vdw
+description	String	Detailed asset description	Van der Waals representation from UH dataset
+format	String	Primary file format	gltf, usdz, blend, fbx
+triCount	Integer	Triangle/polygon count	48213
+tags	Array[String]	Classification and discovery tags	["UC2", "molecule", "ADMET"]
+version	Integer	Current version number	1, 2, 3, ...
+
+ 
+5.1.2	Provenance and Audit Properties
+
+Property	Type	Description	Example
+uploader	String	User identifier from DDTE token	ddte-subject-narmeen@metropolia.fi
+createdAt	DateTime	Asset creation timestamp	2025-02-14T10:03:21Z
+updatedAt	DateTime	Last modification timestamp	2025-02-15T14:22:33Z
+provenance	Object	Generation tool and source data	{"tool": "blender:admet@1.1.0",
+"sourceData": ["data.csv"]}
+useCase	String	Associated DTRIP4H use case	UC2, UC3, UC4, UC5
+ 
+5.2	Storage Organization
+
+5.2.1	Proposed Tagging Strategy
+
+Tag Category	
+Pattern	
+Examples	
+Purpose
+Use Case	UC[2-5]	UC2, UC3, UC4, UC5	Project use case classification
+Domain	Scientific domain	molecule, admet, aq, cancer, dopamine	Scientific field identification
+Technical	Performance/format	lowpoly, lod, mobile, xr	Technical characteristics
+Geographic	Location-specific	brno, helsinki, barcelona	Geographic data context
+Temporal	Time-based	2025q1, march2025, latest	Temporal data context
+ 
+6.	System Workflows and Data Flows
+6.1	Portal-led Access Workflow
+
+6.1.1	Human User Asset Discovery and Download
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+6.2	Tool-led Access Workflow
+
+6.2.1	Blender Plugin Asset Operations
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+6.3	Asset Lifecycle Management
+
+6.3.1	Version Control Workflow
+
+Lifecycle Stage	
+Actions	
+API Operations	
+Storage Impact
+Creation	Initial asset upload with metadata	POST /assets	New UUID, version=1, initial file storage
+Update	New file version or metadata changes	PUT /assets/{id}/file, PATCH /assets/{id}	Version increment, preserve old versions
+Discovery	Search and browse operations	GET /assets, GET
+/assets/{id}	Index queries, no storage changes
+Access	File download and usage	GET /assets/{id}/file	Read operations, audit logging
+Curation	Tag management and organization	PUT /assets/{id}/tags	Metadata updates, search index refresh
+Archive	Long-term retention (manual process)	Administrative operations	Move to archive storage, maintain metadata
+
+6.3.2	Error Handling and Recovery
+
+Error Type	Detection	Recovery Action	Prevention
+Upload Failure	HTTP 5xx response, timeout	Automatic retry with backoff	Size limits, format validation
+Storage Corruption	Checksum mismatch	Restore from backup, re-upload	Regular integrity checks
+Authentication Failure	HTTP 401/403
+response	Token refresh, re-authentication	Token expiry monitoring
+Network Interruption	Connection timeout	Resume download, partial upload retry	HTTP range request support
+ 
+7.	User Experience and Tooling
+7.1	Blender Plugin UX Guidelines
+7.1.1	Standardized Panel Layout
+All Blender plugins follow a consistent interface pattern to ensure user familiarity across different scientific domains:
+
+Panel Section	Purpose	Standard Elements
+A. Data Source	Input file selection and validation	File picker, format detection, validation status
+B. Generation Options	Domain-specific visualization parameters	Dropdown menus, sliders, checkboxes for domain settings
+C. Export & Upload	Output format selection and repository integration	Format selection, naming, tagging, upload controls
+D. Repository Browser	Search and fetch existing assets	Search filters, asset list, download buttons
+E. Help & Status	User guidance and operation feedback	Documentation links, progress indicators, error messages
+
+7.2	Domain-Specific Plugin Specifications
+
+7.2.1	Molecule Structure Generator UX
+ 
+
+UX Element	Implementation	User Benefit
+Input Detection	Automatic format recognition for
+.pdb, .xyz, .smi files	No manual format specification required
+Visualization Modes	Radio buttons: Van der Waals, Ball-and-stick, Space-filling	Quick switching between common molecular representations
+Scale Controls	Radius scaling slider (0.5x to 3.0x)	Adjust molecular size for optimal visualization
+Element Coloring	Standard CPK colors with custom palette option	Familiar scientific color schemes
+Performance Preview	Real-time triangle count display	Performance optimization guidance
+
+7.2.2	ADMET Toxicity Visualizer UX
+
+
+
+
+
+
+UX Element	Implementation	User Benefit
+Axis Selection	Dropdown menus for X, Y, Z axes from available data columns	Flexible multi-dimensional data exploration
+Data Normalization	Checkbox options: Min-Max, Z-Score, Log transformation	Handle diverse data scales and distributions
+Point Styling	Size and color mapping to data properties	Visual encoding of multiple data dimensions
+Filtering	Range sliders for data subset selection	Focus on specific data ranges of interest
+Legend Generation	Automatic color/size legend creation	Clear interpretation of visual encoding
+ 
+7.2.3	CAMS Air Quality Visualizer UX
+
+
+
+
+
+
+UX Element	Implementation	User Benefit
+Geographic Selection	Coordinate input boxes with map preview	Geographic area specification
+Pollutant Selection	Dropdown for available pollutants (PM2.5, NO₂, etc.)	Focus on specific environmental concerns
+Height Scaling	Multiplier slider with real-world distance reference	Emphasize pollution variations for visualization
+Color Mapping	Predefined scientific color schemes (viridis, plasma)	Standard environmental data visualization
+Resolution Control	Grid resolution slider balancing detail vs. performance	Optimize for target display platform
+
+7.2.4	Cancer Cell Visualizer UX
+
+
+
+
+
+
+
+UX Element	Implementation	User Benefit
+Cell Type Mapping	Table view mapping cell types to visual properties	Clear association between data and visualization
+Property Encoding	Dropdown assignments: Size→mRNA, Color→Stiffness	Flexible visual encoding of biological properties
+Mesh Library	Built-in cell shapes with custom mesh import option	Cell representations
+Cluster Analysis	Automatic clustering with manual refinement tools	Reveal spatial patterns in cell data
+Animation Controls	Time-based property changes with timeline scrubber	Visualization of biological processes
+
+7.2.5	Dopamine Carrier Visualizer UX
+
+
+
+
+
+
+UX Element	Implementation	User Benefit
+Transport Pathway	Pathway highlighting with flow animation controls	Visualize molecular transport mechanisms
+Binding Site Focus	Binding site detection and emphasis	Highlight functionally important regions
+Conformational States	Visualization with transition controls	Show protein dynamics and conformational changes
+Pharmacological Context	Drug interaction visualization with known inhibitors	Integrate pharmacological knowledge
+
+8.	Deployment Flexibility and DDTE Integration
+8.1	Overview
+
+This section addresses the deployment architecture, infrastructure requirements, and integration strategies for the WP9/WP10 3D asset generation and visualization platform within the DTRIP4H federated ecosystem.
+
+The architecture has been designed from the outset to support flexible deployment models while maintaining strict compliance with the project's federated architecture principles, GDPR requirements, and EU best practices for research infrastructure interoperability.
+
+The WP9/WP10 architecture is explicitly designed as infrastructure-agnostic and containerized, enabling the generic asset library to be deployed across multiple nodes within the DDTE federated environment. This design ensures that METRO hosting during development phases (M1-M18) is explicitly a temporary development artifact, not a permanent operational model, while enabling seamless transition to the federated DDTE production environment with decentralized RI nodes in subsequent project phases.
+
+
+
+
+Key Objectives:
+•	Clarify deployment options for the generic 3D asset library and associated middleware services
+•	Demonstrate compliance with DTRIP4H's federated architecture mandate and data sovereignty requirements
+•	Specify integration pathways with the DDTE ecosystem developed in WP6/WP7
+•	Document technical portability mechanisms (containerization, infrastructure-as-code) enabling migration between hosting environments
+•	Align deployment strategy with EU best practices including FAIR principles, EOSC standards, and Horizon Europe requirements
+8.2	Federated Architecture Compliance
+The DTRIP4H project operates under a strict federated architecture mandate as specified in the grant agreement. This architectural principle ensures that sensitive research data remains at local Research Infrastructure (RI) nodes, maintaining data sovereignty and GDPR compliance.
+The WP9/WP10 deployment strategy has been designed to fully support this federated model while providing necessary visualization and asset management capabilities.
+
+8.2.1 Data Sovereignty and the Role of METRO
+It is critical to distinguish between two fundamentally different types of data in the DTRIP4H ecosystem:
+Sensitive Research Data: This includes patient information, clinical trial results, proprietary experimental data, and any personally identifiable information (PII). Per the grant agreement's federated architecture requirements ("data repositories available within RIs across Europe can remain on local servers"), this data never leaves the institutional boundaries of the RI nodes. All processing of sensitive research data occurs locally at RI facilities using tools (Blender plugins) that execute on researcher workstations, ensuring complete data sovereignty and GDPR compliance.
+Generic 3D Asset Library: In contrast, the asset library maintained by METRO consists of generic, reusable visualization components such as molecular structure templates, cell morphology models, anatomical references, and environmental visualization frameworks. These assets are scientific visualization tools, not research data. They contain no sensitive information, PII, or proprietary research results. The deployment location of these generic assets is flexible and does not impact data sovereignty requirements.
+
+METRO's role in the DTRIP4H architecture is as a tool provider and generic asset curator, not as a centralized data repository. The distinction is fundamental:
+•	What METRO provides: Blender plugins (client-side tools), generic 3D asset templates, middleware API for asset discovery and retrieval, and integration frameworks
+•	What METRO does NOT provide: Storage or processing of sensitive research data, centralized data aggregation, or any services that would compromise RI data sovereignty
+•	Where tools execute: All data processing occurs locally on researcher workstations at RI nodes, with sensitive data never transmitted to external servers
+
+This architecture ensures that the generic asset library can be deployed flexibly (METRO-hosted during development, DDTE-integrated in production, or distributed across RI nodes) without any impact on the fundamental federated principle that sensitive research data remains under exclusive control of the originating RI.
+
+8.2.2 Decentralized Architecture Diagram
+
+ 
+
+Key Architectural Features:
+ 	Sensitive research data remains exclusively at RI nodes (data sovereignty preserved)
+ 	Blender plugins execute locally at RI facilities (client-side processing)
+ 	Generic asset library is infrastructure-agnostic (deployable flexibly)
+ 	DDTE provides federated services (authentication, discovery) without data centralization
+ 	METRO components are containerized for portability across deployment environments
+
+8.3 Decentralized Asset Library Deployment Strategy
+
+The 3D asset library architecture is designed for fully decentralized deployment across Research Infrastructure (RI) nodes, consistent with DDTE's federated architecture principles and the grant agreement's mandate that "data repositories available within RIs across Europe can remain on local servers".
+Each RI maintains complete local control over its asset library instance, including asset storage and version control, local permission management and access policy enforcement, metadata curation and governance decisions, and asset validation and review workflows. This architecture ensures data sovereignty, operational autonomy, and alignment with institutional compliance requirements while enabling cross-RI asset discovery through DDTE federation services.
+8.3.1 Development Phase (M1-M18) - Internal Testing Only
+
+During the initial development phase (Months 1-18), METRO operates a local test server exclusively for WP9/10 team internal development purposes. This is explicitly a development sandbox for testing and validation, not a production deployment model or architectural template. It serves no governance role, processes no production data from other RIs, and will be decommissioned following successful migration testing to decentralized RI production environments.  
+Purpose: Internal WP9 development, plugin API testing, middleware validation, and deliverable completion (D9.2, D9.3)
+Scope: METRO development team access only; test data only; no external researcher access; no production governance functions
+Infrastructure: METRO local server in Helsinki office (non-production environment)
+Status: Temporary development infrastructure (M1-M18); planned decommissioning after migration to decentralized RI nodes
+Rationale: This temporary configuration enables METRO development team to maintain complete control over asset curation standards, version management testing, and quality assurance processes during the critical development phase. It enables rapid iteration on API specifications, metadata schemas, and plugin integration patterns without dependencies on external infrastructure that may still be under development in WP6/WP7. The containerized architecture developed during this phase ensures seamless migration to decentralized production deployment.
+Important Clarification: This development hosting is explicitly temporary testing infrastructure. The architecture has been designed with containerization, infrastructure-agnostic deployment patterns, and decentralized governance principles from the outset to enable seamless migration to production RI infrastructure in subsequent project phases without architectural redesign.
+8.3.2 Production Deployment (M19+) - Fully Decentralized Architecture
+
+The production architecture deploys asset library instances locally at each participating Research Infrastructure (RI) node, with each RI maintaining autonomous control over its asset collection, access policies, and operational management. DDTE provides federation services (authentication and service discovery) but does not centrally host assets, store asset metadata, or make authorization decisions.
+ Deployment Architecture:
+•	Local RI Operation: Each RI operates its own containerized asset library instance on RI-controlled infrastructure (institutional servers, on-premise HPC systems, or RI-managed cloud environments)
+•	Autonomous Control: RIs have complete authority over asset storage, metadata curation, permission policies, access decisions, and operational procedures for their local instance
+•	DDTE Federation Services: DDTE provides authentication (JWT token issuance for identity verification) and service discovery (registry of available asset library endpoints) but does NOT store assets, manage permissions, or make authorization decisions
+•	No Centralized Asset Management: There is no centralized DDTE asset repository or METRO-hosted production service. All production assets are stored and managed at decentralized RI nodes
+Decentralized RI Node Responsibilities:
+Each participating RI is responsible for:
+•	Infrastructure Operation: Deploy, operate, and maintain local asset library containerized services on institutional infrastructure
+•	Access Policy Definition: Define and enforce access control policies for assets hosted at their node, including permission levels, approval workflows, and embargo periods
+•	Asset Curation: Curate and validate assets contributed by their researchers, ensuring quality standards and verifying absence of sensitive data for shared assets
+•	Storage Management: Manage local storage capacity, backup procedures, disaster recovery, and version history retention
+•	Operational Monitoring: Monitor service health, performance metrics, and security audit logs for their local instance
+•	Compliance: Ensure compliance with institutional policies, GDPR requirements, and ethical guidelines for their jurisdiction
+DDTE Federation Services Role:
+DDTE provides essential federation capabilities without centralizing asset management:
+•	Service Registry: Maintains a registry of available asset library endpoints across participating RIs, including service URLs, RI identifiers, operational status (health checks), and capability metadata (supported formats, API versions)
+•	Authentication: Issues JWT tokens verifying user identity after successful login through DDTE portal. Tokens contain user ID, name, institutional affiliation, and roles, but do not grant automatic access to any specific assets
+•	Discovery: Enables Blender plugins and applications to discover available asset library endpoints without hard-coded configuration, supporting seamless transition between development and production environments
+•	Monitoring: Provides centralized operational monitoring dashboards showing health status of registered asset library endpoints (uptime, response times, error rates) without accessing asset content or metadata
+•	No Authorization Role: DDTE does not make asset-level permission decisions, does not store asset access policies, and does not mediate asset downloads, these functions are performed locally by each RI
+Permission Management - Decentralized and Local:
+Asset-level permissions are managed entirely at local RI nodes:
+•	Each RI's asset library instance enforces its own access control policies based on asset metadata
+•	Permissions are defined by asset owners (researchers) during upload and stored in metadata at the local RI
+•	Access decisions are made by the local RI node's access control component, not by DDTE centrally
+•	When a user requests an asset, the local RI node validates the DDTE JWT token (confirming user identity) and then checks local permission policies (determining authorization)
+•	Different RIs may implement different permission granularity or custom access levels beyond standard consortium definitions, maintaining institutional autonomy
+
+Infrastructure Requirements:
+Each RI deploying a production asset library instance requires:
+•	Container Orchestration: Kubernetes-compatible platform or equivalent container runtime (Docker, containerd, Singularity for HPC environments)
+•	Database Service: PostgreSQL-compatible database (≥ version 13) for metadata storage, approximately 1-10 GB depending on asset collection size
+•	Object Storage: S3-compatible object storage for binary asset files (AWS S3, Azure Blob Storage, MinIO, Ceph, or institutional file storage with S3 gateway)
+•	Compute Resources: Modest requirements, typical deployment: 2-4 CPU cores, 4-8 GB RAM, scalable based on concurrent user load
+•	Network: HTTPS-capable endpoint accessible to consortium researchers; institutional firewall configuration to allow authenticated external access
+•	Authentication Integration: Ability to validate DDTE-issued JWT tokens using DDTE public keys (requires HTTPS access to DDTE key distribution endpoint)
+Deployment Flexibility:
+The containerized architecture supports diverse institutional environments:
+•	Cloud Deployment: RI-managed cloud tenants (AWS, Azure, Google Cloud) using managed Kubernetes (EKS, AKS, GKE) and cloud-native storage
+•	On-Premise Deployment: Institutional data centers using self-hosted Kubernetes, OpenShift, or Docker Swarm with local storage systems
+•	HPC Integration: HPC centers using Singularity containers, Slurm-managed resources, and parallel file systems (Lustre, GPFS, Ceph)
+•	Hybrid Models: Combination of cloud and on-premise resources based on institutional policies and resource availability
+Advantages of Fully Decentralized Production Deployment:
+This architecture delivers multiple benefits aligned with EU research infrastructure best practices:
+•	Data Sovereignty: Each RI retains complete control over assets stored at their node, ensuring compliance with institutional policies and national regulations
+•	Operational Autonomy: RIs independently manage infrastructure, scaling, maintenance windows, and operational procedures according to institutional practices
+•	Policy Flexibility: RIs can define custom access policies, approval workflows, and governance procedures beyond standard consortium patterns
+•	Resilience: Failure or maintenance at one RI node does not impact asset availability at other RIs; no single point of failure
+•	Performance: Assets stored geographically close to researchers reduce latency and improve download performance for large 3D models
+•	Compliance: Sensitive or regulated assets can remain within specific jurisdictions as required by institutional or national data protection laws
+•	Scalability: Each RI scales independently based on local demand; no centralized bottleneck for storage or bandwidth
+8.3.3 Cross-RI Asset Discovery and Federated Search
+While asset libraries are deployed and operated locally at each RI, researchers can discover and access assets across multiple RIs through DDTE-mediated federated search. This model enables consortium-wide asset discovery while maintaining local control over access decisions and preserving data sovereignty.
+Federated Discovery Workflow:
+1.	Authentication: Researcher authenticates via DDTE portal, providing institutional credentials (username/password, SSO, or MFA). DDTE authentication server validates credentials and issues JWT token containing user identity (user ID, name, email), institutional affiliation (RI identifier, department), roles or groups (if applicable), and token expiration time
+2.	Service Discovery: Blender plugin or application queries DDTE service registry to discover available asset library endpoints. Registry returns list of registered RI asset libraries with URLs, RI identifiers, operational health status, and supported API versions
+3.	Federated Metadata Query: Plugin sends asset search query (keywords, tags, format filters, use case identifiers) to each accessible RI asset library endpoint in parallel. Each query includes the DDTE JWT token in the Authorization header
+4.	Local Filtering: Each RI asset library receives the query, validates the JWT token signature, extracts user identity, queries its local metadata database, filters results based on permissions, returns only assets the user is authorized to see (considering asset permission levels and user attributes)
+5.	Result Aggregation: Plugin aggregates metadata results from all responding RIs, presents unified search results to researcher with source RI indicated for each asset, and enables sorting/filtering across the federated result set
+6.	Asset Retrieval: Researcher selects desired asset from search results. Plugin sends download request to the source RI asset library with DDTE JWT token
+7.	Authorization Check: Source RI validates JWT token, checks asset-specific permissions in metadata, makes local authorization decision (grant or deny), logs access attempt for audit trail
+8.	Asset Download: If authorized, source RI streams asset binary file to plugin. If denied, RI returns HTTP 403 Forbidden with explanation (insufficient permissions, approval required, embargo period, etc.)
+
+Privacy-Preserving Search:
+The federated search model preserves privacy and institutional autonomy:
+•	RIs only return metadata for assets the requesting user is permitted to see based on permission levels
+•	Private or restricted assets are filtered from search results, users cannot discover their existence without appropriate permissions
+•	Each RI independently decides what metadata to expose in search results (some RIs may provide rich previews; others minimal metadata)
+•	Query patterns and search behavior are not centrally logged by DDTE, only local RIs see queries to their endpoints
+Cross-RI Permission Models:
+Assets can have cross-institutional access patterns:
+•	Public Consortium Assets: Assets marked "consortium" level are discoverable and accessible by any authenticated DTRIP4H member across all RIs
+•	Institutional Boundary Assets: Assets marked "institution" level are discoverable only by researchers affiliated with that RI
+•	Approval-Based Sharing: Asset owner at RI-A can approve specific researchers from RI-B for access, enabling controlled cross-institutional collaboration
+•	Time-Limited Embargos: Assets can have embargo periods (e.g., "private until 2026-06-30, then consortium") enabling staged release
+This federated search architecture enables researchers to leverage the collective asset library resources of the entire DTRIP4H consortium while ensuring that each RI maintains complete sovereignty over its asset collection, access policies, and authorization decisions. No centralized entity has authority to override local RI access control decisions, preserving the fundamental principle of decentralized governance.
+
+8.3.4 Integration Architecture with DDTE Services
+The decentralized asset library deployment integrates with DDTE-provided federation services while maintaining local operational independence:
+Service Registration Protocol:
+Each RI asset library instance registers with the DDTE service registry upon deployment:
+•	Registers endpoint URL (e.g., https://assets.lmu-research.de/api/v1)
+•	Declares RI identifier (e.g., "LMU_Germany")
+•	Specifies supported API version(s) and capabilities
+•	Provides health check endpoint for monitoring
+•	Registers supported 3D formats and metadata schema version
+Registration enables automatic endpoint discovery by client applications without hard-coded configuration.
+
+Authentication Token Validation:
+RI asset libraries validate DDTE JWT tokens using standard OAuth 2.0 mechanisms:
+•	Token signature verification using DDTE public keys (fetched from DDTE JWKS endpoint)
+•	Token expiration validation
+•	Issuer verification (ensuring token issued by trusted DDTE authority)
+•	Claims extraction (user ID, institution, roles)
+Local RIs cache DDTE public keys with time-to-live (TTL) and periodic refresh to minimize latency and dependencies.
+
+Operational Monitoring Integration:
+RI asset libraries expose health and metrics endpoints:
+•	/health: Service health status (UP/DOWN, database connectivity, storage availability)
+•	/metrics: Prometheus-compatible metrics (request counts, response times, error rates, storage utilization)
+•	DDTE monitoring system polls these endpoints to provide consortium-wide operational dashboard
+Monitoring is non-invasive, DDTE sees only operational metrics, not asset content or detailed access patterns.
+
+Audit Trail Federation (Optional):
+For consortium-level compliance reporting, RIs can optionally contribute anonymized audit summaries:
+•	Aggregate access statistics (assets accessed per day, unique users, popular asset categories)
+•	Privacy-preserving, no individual user tracking or detailed access patterns
+•	Contribution is voluntary and controlled by each RI's data governance board
+This integration architecture ensures that decentralized RI nodes benefit from DDTE federation services (authentication, discovery, monitoring) while maintaining complete operational independence and local control over assets, permissions, and access decisions. 
+8.4 Tool Integration and Plugin Architecture
+The WP9 Blender plugins and Unity VR template operate under a strict client-side execution model that is fundamental to maintaining data sovereignty in the DTRIP4H architecture. All sensitive data processing occurs locally at RI facilities, while generic asset libraries are deployed at decentralized RI nodes with local permission management and access control enforcement. This section clarifies how visualization tools interact with both sensitive research data (which remains local) and generic asset libraries.
+
+All Blender plugins developed in WP9 execute entirely on researcher workstations at RI facilities. When a researcher opens a Blender plugin to visualize scientific data:
+1.	Data Input: The plugin reads sensitive research data files (e.g., .csv, .pdb, .nc formats) directly from the researcher's local file system or from secure RI network storage. Data never leaves the researcher's workstation or institutional network.
+2.	Local Processing: All data parsing, validation, 3D geometry generation, and optimization operations occur locally using Blender's Python API and the researcher's workstation GPU/CPU resources.
+3.	Optional Generic Asset Retrieval: If the plugin needs generic visualization components (e.g., a standardized cell model template, molecular structure frameworks), it can optionally query the asset library via the METRO middleware API. These generic assets contain no sensitive data and are reusable visualization building blocks.
+4.	Local Composition: Retrieved generic assets are combined with researcher-specific data on the local workstation to generate the final visualization. This composition occurs entirely within Blender's local environment.
+5.	Local Export: Final visualizations are exported to standard 3D formats (.glTF, .USDZ) and saved to the researcher's local file system or institutional storage. Researchers have complete control over whether and when to share generated visualizations.
+6.	Optional Upload to Asset Library: Researchers may optionally choose to contribute non-sensitive, generalized visualization models to their local RI asset library for potential reuse by other project participants. During upload:
+•	Researcher selects permission level from the defined hierarchy (private, group, institution, consortium, approval-required, or public) based on intended sharing scope
+•	Upload is authenticated via DDTE JWT token confirming researcher identity
+•	Researcher confirms upload and permission settings via explicit UI confirmation acknowledging data sensitivity classification and permission appropriateness
+•	Local RI performs validation: Uploaded assets are reviewed (via automated scanning and/or manual curation workflows) to ensure they contain no sensitive data, personally identifiable information, or institutional confidential content before being made available according to the specified permission level
+•	Metadata is stored locally including ownership, permissions, provenance, technical specifications, and generation parameters
+The permission level can be updated by the asset owner at any time through the asset management interface (Blender plugin or web portal).
+8.4.1 Integration with DDTE Services: Authentication and Authorization
+The WP9 Blender plugin architecture integrates with DDTE for authentication only, while authorization decisions are made locally by each RI asset library instance. This separation of concerns is fundamental to maintaining the federated architecture's integrity, ensuring data sovereignty, and enabling local policy autonomy.
+Understanding the distinction between authentication (proving who you are) and authorization (determining what you can access) is critical to the system's security model and compliance with the decentralized governance framework.
+Authentication: Identity Verification (DDTE Role)
+DDTE provides centralized authentication services that verify user identity and issue cryptographically signed tokens, but DDTE does not make decisions about asset access permissions.
+Service Discovery:
+Before authentication, Blender plugins and applications must discover available asset library endpoints:
+•	Plugins query the DDTE service registry API (e.g., GET https://ddte.eu/api/registry/asset-libraries)
+•	Service registry returns list of registered RI asset libraries including endpoint URLs (e.g., https://assets.lmu.de/api/v1), RI identifiers and human-readable names, operational health status (UP/DEGRADED/DOWN), supported API versions (e.g., "v1", "v2-beta"), and capability metadata (supported formats, advanced search features)
+•	Plugins cache this registry information with periodic refresh (e.g., every 4 hours) to minimize latency
+•	Service discovery eliminates hard-coded server addresses in plugin configuration, enabling seamless infrastructure evolution, RI participation changes, and development-to-production migration
+User Authentication and JWT Token Issuance:
+When a researcher accesses a Blender plugin requiring asset library integration:
+1.	Authentication Trigger: Plugin detects need for authenticated asset library access (user initiates search, attempts download, or browses asset catalog)
+2.	DDTE Portal Login: Plugin directs user to DDTE authentication portal (browser-based OAuth 2.0 flow or similar mechanism as defined by WP6/WP7)
+3.	Credential Validation: DDTE authentication server validates researcher credentials using institutional single sign-on (SSO) via eduGAIN/SAML federation, username/password with multi-factor authentication (MFA), or other approved authentication methods per institutional policy
+4.	JWT Token Generation: Upon successful authentication, DDTE issues a signed JWT (JSON Web Token) containing:
+	Copy{
+	  "sub": "user_uuid_12345",  // Subject: unique user identifier
+	  "name": "Dr. Janina Rannikko",
+	  "email": "janina.rannikko@metropolia.fi",
+	  "institution_id": "METRO_Finland",
+	  "institution_name": "Metropolia University of Applied Sciences",
+	  "department": "XR Design Department",
+	  "roles": ["researcher", "dtrip4h_member"],
+	  "iss": "https://auth.ddte.eu",  // Issuer: DDTE authority
+	  "aud": "dtrip4h-asset-libraries",  // Audience: intended recipients
+	  "iat": 1699876543,  // Issued at timestamp
+	  "exp": 1699962943,  // Expiration timestamp (e.g., 24 hours)
+	  "jti": "token_unique_id"  // JWT ID for revocation tracking
+	}
+5.	Token Delivery: DDTE returns JWT token to plugin via secure OAuth callback mechanism
+6.	Local Token Caching: Plugin stores token in encrypted local storage (operating system keychain, encrypted file with OS-level protection, or similar secure mechanism). Token is cached for its validity period to avoid repeated authentication prompts during work sessions. Token encryption key derived from user session credentials or OS-protected storage
+What DDTE Authentication Provides:
+•	Identity Assurance: Cryptographic proof that the user is who they claim to be, verified by trusted DDTE authentication authority
+•	Institutional Affiliation: Verified information about user's home institution, department, and organizational roles
+•	Token Validity Period: Time-bounded authentication (typically 1-24 hours) requiring periodic re-authentication for security
+•	Revocation Capability: Ability to invalidate tokens if user account is disabled or security incident occurs
+What DDTE Authentication Does NOT Provide:
+•	Asset-Level Permissions: JWT token does NOT contain information about which specific assets the user can access
+•	Automatic Access Grants: Valid DDTE token does NOT automatically permit access to any asset, each asset's permissions must be checked separately
+•	Authorization Decisions: DDTE does not decide whether user should be granted access to specific resources, local RIs make these decisions
+•	Permission Storage: DDTE does not store or manage asset-level permissions, access control lists, or approval records
+The JWT token is purely an identity credential. It proves that DDTE has verified the user's identity, but each RI asset library must independently decide whether that user's identity satisfies the permission requirements for each requested asset.
+Authorization: Asset-Level Access Control (Local RI Role)
+Each RI asset library instance is solely responsible for authorization decisions, determining whether an authenticated user is permitted to access specific assets based on local permission policies.
+Authorization Architecture Components:
+Each RI asset library implements:
+•	Token Validation Service: Validates DDTE JWT token signatures using DDTE public keys; checks token expiration and revocation status
+•	Access Control Engine: Evaluates asset permission requirements against user identity and attributes; implements permission logic (private, group, institution, consortium, approval-required, public)
+•	Policy Repository: Stores asset metadata including permission specifications defined by asset owners
+•	Audit Logging Service: Records all access attempts (successful and denied) for compliance and security monitoring
+Detailed Authorization Workflow:
+When a user requests an asset (search query, metadata retrieval, or binary file download):
+Step 1: Request Receipt
+RI asset library receives HTTP request:
+GET /api/v1/assets/uuid-cancer-cell-model-123/file
+Authorization: Bearer <DDTE_JWT_TOKEN>
+Step 2: Token Validation (Identity Verification)
+•	Extract JWT token from Authorization header
+•	Fetch DDTE public keys from DDTE JWKS endpoint (cached locally with periodic refresh):
+o	GET https://auth.ddte.eu/.well-known/jwks.json
+o	Verify token signature using DDTE public key (ensures token was issued by legitimate DDTE authority and has not been tampered with)
+•	Verify token expiration (exp claim), reject if expired
+•	Verify token audience (aud claim), ensure intended for asset libraries
+•	Optional: Check token revocation status via DDTE revocation list endpoint
+•	Result: If validation succeeds, RI now has verified user identity with high confidence. If validation fails, return 401 Unauthorized and terminate request.
+Step 3: Asset Metadata Retrieval
+Query local metadata database for requested asset:
+•	CopySELECT * FROM assets WHERE asset_id = 'uuid-cancer-cell-model-123'
+•	If asset not found, return 404 Not Found
+•	Retrieve asset's access_control metadata section (see Section 8.4.2 for detailed schema)
+Step 4: Permission Evaluation (Authorization Decision)
+Local RI access control engine evaluates whether user identity satisfies asset permission requirements:
+Example 1: Consortium-Level Asset
+CopyAsset metadata: {
+  "access_control": {
+    "access_level": "consortium",
+    "project_id": "DTRIP4H"
+  }
+}
+User token claims: {
+  "roles": ["researcher", "dtrip4h_member"],
+  "institution_id": "MU_Czech"
+}
+Decision: GRANT access
+Reasoning: User has "dtrip4h_member" role; asset permits consortium access
+
+Example 2: Institution-Only Asset
+CopyAsset metadata: {
+  "access_control": {
+    "access_level": "institution",
+    "institution_id": "LMU_Germany"
+  }
+}
+User token claims: {	
+  "institution_id": "UH_Finland"
+}
+Decision: DENY access (403 Forbidden)
+Reasoning: User from UH_Finland; asset restricted to LMU_Germany institution
+
+Example 3: Approval-Required Asset
+CopyAsset metadata: {
+  "access_control": {
+    "access_level": "approval_required",
+    "owner_id": "user_uuid_67890",
+    "approved_users": ["user_uuid_12345", "user_uuid_54321"]	
+  }
+}
+User token claims: {	
+  "sub": "user_uuid_12345"
+}
+Decision: GRANT access
+Reasoning: User is in approved_users list
+Example 4: Private Asset
+CopyAsset metadata: {
+  "access_control": {
+    "access_level": "private",
+    "owner_id": "user_uuid_67890"
+  }
+}
+User token claims: {
+  "sub": "user_uuid_12345"
+}
+Decision: DENY access (403 Forbidden)
+Reasoning: User is not the asset owner; private assets only accessible by owner
+Step 5: Access Decision Enforcement
+Based on authorization evaluation:
+If GRANTED:
+Retrieve asset binary file from local object storage
+Stream file to requesting client with appropriate Content-Type header
+Return HTTP 200 OK with asset binary data
+Log successful access event to audit trail:
+Timestamp: 2025-11-15T14:23:45Z
+User: user_uuid_12345 (jane.smith@lmu.de)
+Asset: uuid-cancer-cell-model-123
+Action: DOWNLOAD
+Decision: GRANTED
+Reason: Consortium-level access; user is DTRIP4H member
+If DENIED:
+	Return HTTP 403 Forbidden with JSON error response:
+
+	Copy{
+	  "error": "forbidden",
+	  "message": "Insufficient permissions to access this asset",
+	  "details": {
+	    "asset_id": "uuid-cancer-cell-model-123",
+	    "required_access_level": "institution",
+	    "required_institution": "LMU_Germany",
+	    "user_institution": "UH_Finland"
+	  },
+	  "contact": "asset.owner@lmu.de for access requests"
+	}
+	Log denied access attempt to audit trail for security monitoring:
+Timestamp: 2025-11-15T14:25:12Z
+User: user_uuid_98765 (john.doe@uh.fi)
+Asset: uuid-cancer-cell-model-123
+Action: DOWNLOAD
+Decision: DENIED
+Reason: Institution mismatch (required: LMU_Germany, user: UH_Finland)
+Step 6: Audit and Compliance Logging
+All access attempts (granted and denied) are logged to local RI audit database:
+•	Timestamp of access attempt
+•	User identity (ID, name, email, institution)
+•	Requested asset ID and name
+•	Action performed (search, metadata view, download)
+•	Authorization decision (granted/denied) and reasoning
+•	IP address and user agent for security analysis
+•	Token ID (jti claim) for correlation with authentication events
+Audit logs are retained per institutional policy and GDPR requirements (typically 1-7 years), accessible only to authorized RI administrators and data protection officers, used for security incident investigation and compliance reporting.
+8.4.2 Asset Permission Model and Metadata Schema
+This section specifies the permission model for 3D assets, the metadata schema encoding these permissions, and the workflow by which researchers define and manage access control policies. Asset permissions are set by the uploading researcher during asset contribution and stored in metadata at the local RI asset library, enabling fine-grained, asset-level access control within the decentralized architecture.
+Permission Specification During Upload
+When researchers upload assets to their local RI asset library (via Blender plugin interface, web portal, or API), they specify access control policies that govern who can discover and access the asset. The uploading researcher is the initial asset owner and has authority to define permissions, modify them over time, and delegate ownership if needed.
+Upload Workflow with Permission Selection:
+1.	Asset Preparation: Researcher generates 3D asset using Blender plugin (e.g., molecule structure, ADMET visualization, cancer cell cluster)
+2.	Upload Initiation: Researcher selects "Upload to Asset Library" in plugin interface or web portal
+3.	Authentication Check: Plugin/portal verifies user has valid DDTE JWT token (if expired, redirects to authentication)
+4.	Asset Metadata Form: System presents form for researcher to provide:
+•	Name: Human-readable asset name (required)
+•	Description: Detailed description of asset content and intended use (required)
+•	Tags: Searchable keywords (use case, domain, technique, organism, etc.) (required)
+•	Access Level: Permission level selection from hierarchy (required) – see next subsection
+•	Additional Permission Parameters: Depending on selected access level (group ID, approved users, embargo date, license)
+•	File Format: Automatically detected (glTF, USDZ, .blend, FBX)
+•	Data Sensitivity Classification: Researcher confirms asset contains no sensitive data if sharing beyond private level
+5.	Validation: Local RI asset library validates:
+•	Metadata completeness (required fields present)
+•	File integrity (valid format, non-corrupted)
+•	Data sensitivity compliance (if "consortium" or "public" selected, researcher confirms no sensitive data)
+•	Optional: automated scanning for embedded text, metadata, or patterns suggesting sensitive content
+6.	Confirmation: Researcher explicitly confirms upload and permission settings via checkbox acknowledgment: "I confirm this asset contains no sensitive personal data and is suitable for [selected access level] sharing per DTRIP4H data management policies"
+7.	Storage: Asset binary file stored in local RI object storage; metadata (including permissions) stored in local RI database
+8.	Acknowledgment: System returns asset ID and provides management URL for future permission updates
+Permission Levels Hierarchy
+The asset library supports a hierarchical permission model ranging from most restrictive (private) to most open (public). Each level is designed to support common sharing patterns in collaborative research while maintaining institutional control.
+Level 1: Private (Researcher Only)
+•	Access: Only the asset owner (uploader) can discover and access the asset
+•	Typical Use Cases: Work-in-progress visualizations; unpublished research; preliminary analyses; personal asset library for reuse across projects
+•	Visibility: Asset does not appear in search results for other users (completely hidden)
+	Metadata Example:
+	Copy{
+	  "access_control": {
+	    "access_level": "private",
+	    "owner_id": "user_uuid_researcher_123"
+	  }
+	}
+Level 2: Research Group
+•	Access: Accessible by researchers in the same institutional research group or project team
+•	Typical Use Cases: Collaborative team visualizations; shared project templates; group-specific models
+•	Group Definition: Research groups defined in local RI user management system or imported from institutional directory (LDAP, Active Directory)
+•	Visibility: Asset appears in search results only for group members
+	Metadata Example:
+	Copy{
+	  "access_control": {
+	    "access_level": "group",
+	    "group_id": "research_group_cancer_imaging_LMU",
+	    "owner_id": "user_uuid_researcher_123"
+	  }
+	}
+Level 3: Institutional (RI Node)
+•	Access: Accessible by all authenticated researchers affiliated with the same Research Infrastructure (RI) node
+•	Typical Use Cases: Institutional template libraries; standardized visualization components for local use cases; training materials
+•	Visibility: Asset appears in search results for all users from the same institution
+	Metadata Example:
+	Copy{
+	  "access_control": {
+	    "access_level": "institution",
+	    "institution_id": "LMU_Germany",
+	    "owner_id": "user_uuid_researcher_123"
+	  }
+	}
+Level 4: Consortium (DTRIP4H Project)
+•	Access: Accessible by all authenticated researchers within the DTRIP4H consortium (any participating RI)
+•	Typical Use Cases: Generic visualization templates suitable for multiple use cases; published use case assets from deliverables; best practices examples; cross-RI collaboration assets
+•	Visibility: Asset appears in federated search results for all DTRIP4H consortium members
+•	Validation: Researcher must confirm asset contains no sensitive data, institutional confidential information, or unpublished results requiring protection
+	Metadata Example:
+	Copy{
+	  "access_control": {
+	    "access_level": "consortium",
+	    "project_id": "DTRIP4H",
+	    "owner_id": "user_uuid_researcher_123"
+	  }
+	}
+Level 5: Approval-Required
+•	Access: Accessible only after explicit owner approval for each requesting user
+•	Typical Use Cases: High-value specialized models requiring usage tracking; licensed content with restricted distribution; commercially-sensitive visualization techniques; assets with attribution requirements
+•	Workflow:
+1.	Requester discovers asset in search (metadata visible but download unavailable)
+2.	Requester clicks "Request Access" button
+3.	Owner receives notification via email/portal with requester information and justification
+4.	Owner approves or denies request via management interface
+5.	If approved, requester ID added to approved_users list; requester notified
+6.	Requester can now download asset; access logged for audit
+•	Visibility: Asset metadata visible in search results; download requires approval
+	Metadata Example:
+	Copy{
+	  "access_control": {
+	    "access_level": "approval_required",
+	    "owner_id": "user_uuid_researcher_123",
+	    "approved_users": [
+	      "user_uuid_researcher_456",
+	      "user_uuid_researcher_789"
+	    ],
+	    "approval_workflow": {
+	      "require_justification": true,
+	      "auto_expire_days": 365
+	    }
+	  }
+	}
+Level 6: Public
+•	Access: Accessible by any authenticated user in the DDTE ecosystem, including external researchers beyond DTRIP4H consortium if DDTE federation is extended
+•	Typical Use Cases: Open-source generic templates; published research outputs suitable for broad dissemination; educational materials; community-contributed assets with open licenses
+•	License Specification: Must include explicit license (e.g., CC-BY-4.0, CC0, MIT) defining reuse terms
+•	Visibility: Asset appears in all search contexts; may be indexed by external discovery services
+•	Validation: Strong validation required, researcher acknowledges asset is suitable for public release and complies with all institutional policies
+	Metadata Example:
+	Copy{
+	  "access_control": {
+	    "access_level": "public",
+	    "owner_id": "user_uuid_researcher_123",
+	    "license": "CC-BY-4.0",
+	    "attribution_required": true,
+	    "attribution_text": "Cancer cell model developed by Dr. Jane Smith, LMU Munich, DTRIP4H project"
+	  }
+	}
+8.5 Technical Portability and Containerization
+To support diverse deployment scenarios and institutional computing environments, WP9 and WP10 components are developed with technical portability as a foundational requirement, directly implementing the grant agreement's mandate for "platform-agnostic design" and "containerization to facilitate scalability."
+8.5.1 Proposed Backend Services Containerization
+Component	Technology	Purpose	Deployment Flexibility
+Asset Library API	Docker containers	RESTful service endpoints	Any container orchestration platform
+Database Services	PostgreSQL container	Asset metadata and versioning	Cloud-managed or self-hosted
+Authentication Gateway	OAuth2/OIDC provider	Unified access management	DDTE identity services or standalone
+Object Storage	S3-compatible	Asset file storage	Cloud (AWS/Azure/GCS) or on-prem (MinIO)
+
+8.5.2 Proposed Infrastructure Portability Matrix
+Deployment Target	Container Runtime	Orchestration	Storage Backend	Use Case
+DDTE Platform Nodes (decentralized RI nodes)	Docker/containerd	Kubernetes	DDTE object storage	Primary Target (M20+)
+AWS Cloud	Docker	EKS (Elastic Kubernetes)	S3	Cloud backup or hybrid deployment
+Azure Cloud	Docker	AKS (Azure Kubernetes)	Azure Blob Storage	Alternative cloud provider
+On-Premises HPC	Singularity/Docker	Kubernetes/Slurm (Self-hosted K8s cluster)	Ceph/MinIO	RI local mirrors
+8.5.3 Data Harmonization and Interoperability
+As specified in the grant agreement WP9 description, "T9.1 will also collaborate with WP6 to ensure that data is harmonized between generative systems and DTs" (p.15). This integration ensures that 3D assets generated by WP9 tools are compatible with digital twin simulations developed in WP7.
+Harmonization Mechanisms:
+ 	Standardized Metadata Schema: Asset metadata follows DDTE-wide schema conventions defined in WP6, ensuring consistent tagging, provenance tracking, and searchability
+ 	Semantic Tagging: Assets are tagged using controlled vocabularies aligned with biomedical ontologies.
+ 	Format Compatibility: All assets exported in glTF 2.0 format, which is compatible with visualization engines developed.
+ 	Coordinate System Alignment: 3D asset coordinate systems follow DDTE conventions (e.g., right-handed coordinates, consistent unit scales)
+ 	API Versioning: Middleware API follows semantic versioning and maintains backward compatibility to avoid breaking dependent services
+
+8.6 Compliance Framework and Best Practices
+
+The deployment architecture for WP9 components is designed to comply with EU regulatory frameworks and align with recognized best practices for research infrastructure operation.
+
+8.6.1 GDPR and Data Protection Compliance
+All aspects of the asset library deployment are designed to maintain strict GDPR compliance, particularly with respect to data sovereignty and minimization principles.
+Key Compliance Measures:
+•	Data Localization: Sensitive research data never leaves the RI institutional boundaries where it originates. All processing occurs locally on researcher workstations.
+•	Purpose Limitation: Generic assets stored in the shared library are used exclusively for scientific visualization purposes; no secondary uses without explicit consent.
+•	Data Minimization: Asset library metadata includes only information necessary for discovery and retrieval; no PII or unnecessary data collection.
+•	Right to Erasure: Researchers can delete contributed assets.
+•	Audit Logging: All access to the asset library is logged with timestamp, user identity, and operation performed; logs retained per GDPR requirements.
+•	Encryption: All data in transit (HTTPS/TLS 1.3) and at rest (encrypted storage volumes) to protect against unauthorized access.
+
+8.6.2 FAIR Data Principles
+The asset library implementation adheres to FAIR (Findable, Accessible, Interoperable, Reusable) data principles as mandated by Horizon Europe requirements.
+
+FAIR Principle	Implementation
+Findable	Comprehensive metadata for all assets; searchable via REST API; unique persistent identifiers (UUIDs)
+Accessible	Open API with standardized authentication; multiple access paths (portal, programmatic); documented endpoints
+Interoperable	Standard formats (glTF, USDZ); semantic tagging; coordinate system alignment; API versioning
+Reusable	Clear licensing (open-source tools, CC-BY assets); provenance tracking; version control; comprehensive documentation
+
+8.6.3 EOSC (European Open Science Cloud) Alignment
+The deployment architecture aligns with EOSC principles for federated research infrastructure, enabling potential future integration with broader European research ecosystems.
+EOSC Alignment:
+•	Federated Services: Asset library can be registered in EOSC service catalog, enabling discovery by researchers beyond DTRIP4H consortium
+•	Standard Authentication: DDTE identity federation supports integration with eduGAIN and other academic authentication federations
+•	Open Standards: Use of standard protocols (REST, OAuth2, glTF) facilitates interoperability with other EOSC services
+•	Service Level Expectations: Deployment follows EOSC service quality guidelines for availability, documentation, and support
+
+8.6.4 Horizon Europe Open Science Requirements
+The project adheres to Horizon Europe mandates for open access and research transparency.
+Open Science Measures:
+•	Open Source Tools: All Blender plugins released under open-source license (MIT or GPL-compatible)
+•	Open Formats: Priority support for open 3D formats (glTF 2.0) over proprietary alternatives
+•	Open APIs: Comprehensive API documentation published openly; no vendor lock-in
+•	Open Metadata: Asset metadata published under CC0 (public domain) to maximize reusability
+•	Reproducibility: Provenance tracking enables reproduction of visualizations from source data
+ 
+8.6.5 Responsibility Matrix
+
+Responsibility Area	Development
+Phase (M1-M18)	Production
+Phase (M19+)	Maintenance
+Asset Library Infrastructure	METRO (development server)	DDTE (decentralized RI nodes)	DDTE operations team
+Blender Plugin Development	METRO development team	METRO (updates, support)	Open-source community
+Unity VR Template Development	LUAS development team	LUAS + METRO (updates, support)	Open-source community (post-project)
+Authentication Services	DDTE identity providers	DDTE identity providers	DDTE operations team
+Research Data Processing	Individual RIs (local)	Individual RIs (local)	Individual RIs (local)
+Generic Asset Curation	METRO + RI
+contributors	Community governance	Community governance
+
+
+9.	Risk Management
+9.1	Risk Assessment and Mitigation
+
+Risk	Probability	Impact	Mitigation Strategy
+Large Asset Storage	High	Medium	Implement compression, LOD generation, storage limits
+DDTE Integration Issues	Medium	High	Regular coordination with WP6, fallback authentication mechanisms, phased integration approach
+Plugin Compatibility	Medium	Medium	Version compatibility matrix, automated testing across Blender versions, clear deprecation policies
+Data Format Evolution	Medium	Low	Version-aware format handling, migration tools
+Performance Degradation	Low	Medium	Monitoring, performance testing, scaling procedures
+Security Vulnerabilities	Low	High	Security audits, dependency updates, DDTE delegation
+
+10.	Summary
+The deployment flexibility and DDTE integration strategy for WP9 balances multiple critical objectives while addressing the fundamental architectural principle that METRO hosting is a development-phase artifact, not a permanent operational model.
+
+10.1 Core Architectural Achievements
+
+Federated Infrastructure Compliance: The architecture strictly adheres to the grant agreement's federated mandate, ensuring that sensitive research data remains under local RI control, the generic asset library is designed for distributed deployment across DDTE nodes, there is no centralized data aggregation or research output warehousing, and GDPR compliance is maintained through clear architectural separation.
+ 
+Infrastructure Portability and Flexibility: The containerized, platform-agnostic design enables the current state of METRO-hosted development/testing environment (M1-M18), target deployment to DDTE federated infrastructure as primary production platform (M19+), future flexibility for optional RI-local mirrors for performance or compliance needs, and seamless migration pathway via container orchestration without redesign.
+
+Technical Interoperability: The proposed implementation demonstrates multiple deployment models supporting diverse institutional requirements, open-source tools distributed via standard package managers and repositories, cross-platform compatibility (Windows, macOS, Linux; Blender 3.x, 4.x), RESTful APIs with OpenAPI specifications for broad interoperability, and standard 3D formats (glTF, OBJ, FBX) ensuring engine compatibility.
+
+Proposed DDTE Ecosystem Integration: Deep integration with DDTE provides unified authentication eliminating multiple login workflows, service discovery through DDTE catalog infrastructure, native DDTE platform deployment (not external dependency), metadata federation enabling cross-service linking, and centralized monitoring and operational management.
+
+EU Best Practices Alignment: Comprehensive compliance with FAIR Principles (Findable, Accessible, Interoperable, Reusable asset metadata), GDPR (data sovereignty preserved, no sensitive data processing by METRO/DDTE), EOSC (federated infrastructure model, open science principles), and Horizon Europe (open-source deliverables, reproducible research support).
+
+10.2 Deployment Model Clarification
+
+Development Phase (Current): METRO hosts asset library on local infrastructure for rapid development and iterative testing (D9.2, D9.3 deliverables), quality assurance and stakeholder validation, integration testing with Blender plugins. This is explicitly temporary, not the production architecture.
+
+Production Deployment (Target): Asset library deployed on DDTE federated infrastructure using Kubernetes, multiple DDTE nodes provide high availability and distributed access, containerization enables seamless migration without architectural redesign, and no permanent centralization at METRO.
+ 
+10.3 Project Impact and Sustainability
+
+This deployment strategy positions WP9 and future WP10 deliverables for long-term sustainability and impact beyond the DTRIP4H project timeline. The architecture enables evolution from development prototype to production service, supporting the transition from project-funded operation to community-sustained open-source ecosystem, and facilitating integration with emerging European digital infrastructure initiatives.
+
+The comprehensive technical approach, alignment with EU best practices, and explicit focus on portability and federation establish a robust foundation for the automated 3D asset generation and management system to serve European research communities effectively throughout the project lifecycle and beyond.
+ 
+11.	Document Information
+
+Document Version:	4.0
+Last Updated:	January 2026
+Document Status:	Under Review
+Lead Author:	METRO (Metropolia Ammattikorkeakoulu OY)
+Contributors:	DTRIP4H WP9 Team, DTRIP4H Consortium
+Document Classification:	Public
+
+This document constitutes Deliverable D9.1 for the DTRIP4H project.
+© 2025 - All rights reserved. This project has received funding from the European Union's Horizon Europe research and innovation programme under grant agreement No. [EU101188432].
