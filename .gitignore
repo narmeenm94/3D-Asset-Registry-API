@@ -38,6 +38,5 @@ htmlcov/
 .coverage
 .pytest_cache/
 
-# Docs (Word files in Reference Documents)
-Reference Documents/*.docx
-Reference Documents/~$*
+# Reference documents (internal development only)
+Reference Documents/
